@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Canvas Student Analysis Conversion</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+
+</head>
+
+<body class="py-5">
+
+    <div class="container">
+        <h1>Canvas Student Analysis Conversion</h1>
+
+        <div class="row mt-5">
+            <div class="col-md-2">
+                File
+            </div>
+            <div class="col-md-2">
+                <input type="file" id="file" name="file">
+            </div>
+        </div>
+        <div class="row pt-2">
+            <div class="col-md-2">
+                Min Score
+            </div>
+            <div class="col-md-2">
+                <div class="input-group">
+                    <input type="number" class="form-control" id="minScore" name="minScore" class="form-control"
+                        max="100" min="0" value="80" />
+                    <div class="input-group-append">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row pt-2">
+            <div class="col-md-2">
+                Points per good submission
+            </div>
+            <div class="col-md-2">
+                <div class="input-group">
+                    <input type="number" class="form-control" id="pointsPerGoodSubmission"
+                        name="pointsPerGoodSubmission" class="form-control" max="100" min="0" value="2" />
+                    <div class="input-group-append">
+                        <span class="input-group-text">points</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="row pt-2">
+            <div class="col-md-2"></div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary" id="convert">Convert</button>
+            </div>
+        </div>
+
+
+
+        <h2 class="mt-5">Instructions</h2>
+    </div>
+
+
+    <script>
+        const csvStringToArray = strData => {
+            const objPattern = new RegExp(("(\\,|\\r?\\n|\\r|^)(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^\\,\\r\\n]*))"), "gi");
+            let arrMatches = null, arrData = [[]];
+            while (arrMatches = objPattern.exec(strData)) {
+                if (arrMatches[1].length && arrMatches[1] !== ",") arrData.push([]);
+                arrData[arrData.length - 1].push(arrMatches[2] ?
+                    arrMatches[2].replace(new RegExp("\"\"", "g"), "\"") :
+                    arrMatches[3]);
+            }
+            return arrData;
+        };
+
+
+        document.getElementById('convert').addEventListener('click', function () {
+            var file = document.getElementById('file').files[0];
+
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+
+            let minScore = document.getElementById('minScore').value;
+            let points = parseInt(document.getElementById('pointsPerGoodSubmission').value);
+            let reader = new FileReader();
+            reader.onload = function (e) {
+                // Open file as a CSV
+                var csv = e.target.result;
+                var lines = csv.split("\n");
+                var allSubmissions = [];
+
+                // Parse CSV, skip heading row
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (line.trim() === '') {
+                        continue;
+                    }
+
+                    let parts = csvStringToArray(line)[0];
+
+                    let submission = {
+                        name: parts[0],
+                        sis_id: parts[2],
+
+                        // sis_id without first character
+                        visible_id: parts[2].substring(1),
+                        section: parts[3],
+
+                        // scores
+                        correct: parts[parts.length - 3],
+                        incorrect: parts[parts.length - 2],
+                        raw_score: parts[parts.length - 1],
+                    };
+                    submission.total_questions = parseInt(submission.correct) + parseInt(submission.incorrect);
+                    submission.percentage = (submission.correct / submission.total_questions) * 100;
+
+                    // split name, first name up to first space, last name everything after
+                    let nameParts = submission.name.split(' ');
+                    submission.first_name = nameParts[0];
+                    submission.last_name = nameParts.slice(1).join(' ');
+
+                    allSubmissions.push(submission);
+                }
+
+                if (allSubmissions.length === 0) {
+                    alert('No submissions found');
+                    return;
+                }
+
+                results = {};
+                submissionsParsed = 0;
+                allSubmissions.forEach(sub => {
+                    if (!(sub.sis_id in results)) {
+                        // Haven't seen this student yet, so create a new entry with zeros
+                        results[sub.sis_id] = {
+                            sis_id: sub.sis_id,
+                            visible_id: sub.visible_id,
+                            first_name: sub.first_name,
+                            last_name: sub.last_name,
+                            name: sub.name,
+                            section: sub.section,
+                            total_questions: 0,
+                            correct: 0,
+                            incorrect: 0,
+                            points: 0,
+                            attempts: 0,
+                            good_attempts: 0,
+                        };
+                    }
+
+                    // Update the student's results
+                    results[sub.sis_id].total_questions += sub.total_questions;
+                    results[sub.sis_id].correct += parseInt(sub.correct);
+                    results[sub.sis_id].incorrect += parseInt(sub.incorrect);
+                    results[sub.sis_id].attempts += 1;
+
+                    // If the student got a passing grade, give them points
+                    if (sub.percentage >= minScore) {
+                        results[sub.sis_id].points += points;
+                        results[sub.sis_id].good_attempts += 1;
+                    }
+                });
+
+                // Convert results to CSV
+                let csvData = 'SIS ID,Visible ID,First Name,Last Name,Full Name,Section,Total Questions,Correct,Incorrect,Attempts,Good Attempts,Points\n';
+
+                for (let key in results) {
+                    let student = results[key];
+                    csvData += `${student.sis_id},${student.visible_id},${student.first_name},${student.last_name},${student.name},${student.section},${student.total_questions},${student.correct},${student.incorrect},${student.attempts},${student.good_attempts},${student.points}\n`;
+                }
+
+                // Download the CSV
+                var blob = new Blob([csvData], { type: 'text/csv' });
+                var url = window.URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'results.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+
+
+            };
+            reader.readAsBinaryString(file);
+        });
+    </script>
+
+</body>
+
+</html>
