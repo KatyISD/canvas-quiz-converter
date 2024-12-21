@@ -184,6 +184,9 @@
                 a.click();
                 window.URL.revokeObjectURL(url);
 
+                // remove a
+                document.body.removeChild(a);
+
 
             };
             reader.readAsBinaryString(file);
